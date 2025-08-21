@@ -3,10 +3,7 @@
 #----------------------------------
 
 # Import docker image with maven installed
-FROM maven:3.8.3-openjdk-17 as builder 
-
-# Add maintainer, so that new user will understand who had written this Dockerfile
-MAINTAINER Madhup Pandey<madhuppandey2908@gmail.com>
+FROM maven:3.8.3-openjdk-17 as builder
 
 # Add labels to the image to filter out if we have multiple application running
 LABEL app=bankapp
