@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: bankapp
-        image: priyanshijat6701/springboot-bank-app:v2
+        image: priyanshijat6701/springboot-bank-app:v1
         ports:
         - containerPort: 8080
         env:
