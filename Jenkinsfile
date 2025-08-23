@@ -1,87 +1,77 @@
-@Library('Shared') _
 pipeline {
     agent any
-    
     environment{
-        SONAR_HOME = tool "Sonar"
+        SONAR_HOME = tool "sonar"
     }
-    
     parameters {
-        string(name: 'DOCKER_TAG', defaultValue: '', description: 'Setting docker image for latest push')
+        string(name: 'DOCKER_TAG', defaultValue: 'latest', description: 'Setting docker image for latest push')
     }
-    
-    stages {
-        
-        stage("Workspace cleanup"){
+    stages{
+        stage("clone code from github"){
             steps{
-                script{
-                    cleanWs()
-                }
+                git branch: 'DevOps', url: 'https://github.com/priyanshijat/Springboot-BankApp.git'
             }
         }
-        
-        stage('Git: Code Checkout') {
-            steps {
-                script{
-                    code_checkout("https://github.com/LondheShubham153/Springboot-BankApp.git","DevOps")
-                }
+        stage("build an image"){
+            steps{
+                sh "docker build -t bank-app:${params.DOCKER_TAG} ."
             }
         }
-        
         stage("Trivy: Filesystem scan"){
             steps{
-                script{
-                    trivy_scan()
-                }
+                sh "trivy fs ."
             }
         }
-
-        stage("OWASP: Dependency check"){
-            steps{
-                script{
-                    owasp_dependency()
-                }
+        stage("OWASP Dependency-Check") {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./ --format XML', odcInstallation: 'owasp'
+                dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
+        stage("SonarQube Code Quality Analysis") {
+            steps {
+                withSonarQubeEnv("sonar") {
+                    sh '''
+                    ${SONAR_HOME}/bin/sonar-scanner \
+                    -Dsonar.projectKey=bankapp \
+                    -Dsonar.projectName=bankapp \
+                    -Dsonar.exclusions=**/*.java
+                    '''
+                }
+            }
+         }
+         stage("SonarQube Quality Gate") {
+             steps {
+                 timeout(time: 2, unit: 'MINUTES') {
+                     waitForQualityGate abortPipeline: true
+                 }
+              }
+         }
         
-        stage("SonarQube: Code Analysis"){
+        stage("push image on dockerhub"){
             steps{
-                script{
-                    sonarqube_analysis("Sonar","bankapp","bankapp")
+                withCredentials([usernamePassword(
+                    credentialsId: "dockerhubcreds",
+                    usernameVariable: "dockerHubUser",
+                    passwordVariable: "dockerHubPass"
+                )]){
+                    sh "docker login -u ${env.dockerHubUser} -p ${env.dockerHubPass}"
+                    sh "docker image tag bank-app:${params.DOCKER_TAG} ${env.dockerHubUser}/bank-app:${params.DOCKER_TAG}"
+                    sh "docker push ${env.dockerHubUser}/bank-app:${params.DOCKER_TAG}"
                 }
             }
-        }
-        
-        stage("SonarQube: Code Quality Gates"){
-            steps{
-                script{
-                    sonarqube_code_quality()
-                }
-            }
-        }
-
-        stage("Docker: Build Images"){
-            steps{
-                script{
-                    docker_build("bankapp","${params.DOCKER_TAG}","madhupdevops")
-                }
-            }
-        }
-        
-        stage("Docker: Push to DockerHub"){
-            steps{
-                script{
-                    docker_push("bankapp","${params.DOCKER_TAG}","madhupdevops")
-                }
-            }
-        }
+       }
     }
-    post{
-        success{
-            archiveArtifacts artifacts: '*.xml', followSymlinks: false
-            build job: "BankApp-CD", parameters: [
-                string(name: 'DOCKER_TAG', value: "${params.DOCKER_TAG}")
-            ]
+    post {
+        success {
+            script {
+                emailext(
+                    from: 'priyanshijat06@gmail.com',
+                    to: 'priyanshijat06@gmail.com',
+                    subject: 'Build Success for Bankapp CICD',
+                    body: 'Build Success for Bankapp CICD'
+                )
+            }
         }
     }
 }
